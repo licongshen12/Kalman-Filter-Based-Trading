@@ -1,0 +1,8 @@
+pandas
+numpy
+pykalman
+ccxt
+matplotlib
+python-dotenv
+jupyter
+ipykernel
