@@ -38,4 +38,3 @@ class MarginAccount:
 # Create and display a margin account object
 account = MarginAccount()
 account.__dict__
-
