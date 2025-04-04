@@ -4,6 +4,10 @@ import pandas as pd
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+from datetime import datetime, timezone
+
+# Replacing datetime.utcnow() with timezone-aware datetime
+end_time = int(datetime.now(timezone.utc).timestamp() * 1000)  # now in ms
 
 # Run this from the root folder:
 # $ python src/data_loader.py
@@ -15,8 +19,7 @@ load_dotenv()
 RAW_DATA_PATH = "data/raw/"
 PROCESSED_DATA_PATH = "data/processed/"
 
-
-def load_binance_data(symbol: str, timeframe: str = "1m", limit: int = 1000) -> pd.DataFrame:
+def load_binance_data(symbol: str, timeframe: str = "5m", limit: int = 1000) -> pd.DataFrame:
     """
     Fetch historical OHLCV data from Binance using CCXT.
 
@@ -40,20 +43,23 @@ def load_binance_data(symbol: str, timeframe: str = "1m", limit: int = 1000) -> 
     df.set_index("timestamp", inplace=True)
     return df
 
-
-def load_deribit_3m_data(instrument_name="BTC-27JUN25", resolution="1", count=1000) -> pd.DataFrame:
+def load_deribit_3m_data(instrument_name="BTC-27JUN25", resolution="5", count=1000) -> pd.DataFrame:
     """
     Fetch OHLCV data from Deribit for BTC futures using their TradingView API.
-    Now includes required 'start_timestamp' param.
     """
-    end_time = int(datetime.utcnow().timestamp() * 1000)  # now in ms
-    duration_minutes = int(count) * int(resolution)
-    start_time = end_time - duration_minutes * 60 * 1000  # ms
+    end_time = int(datetime.now(timezone.utc).timestamp() * 1000)  # current timestamp in ms
+
+    # Fetch data for the last 'count' bars
+    duration_minutes = count * int(resolution)  # Calculate total duration in minutes
+    start_time = end_time - (duration_minutes * 60 * 1000)  # Calculate start time based on resolution and count
+
+    print(
+        f"Fetching data from Deribit for {instrument_name} with resolution {resolution} and start_time {start_time} and end_time {end_time}")
 
     url = "https://www.deribit.com/api/v2/public/get_tradingview_chart_data"
     params = {
         "instrument_name": instrument_name,
-        "resolution": resolution,
+        "resolution": resolution,  # Use "5" for 5 minutes
         "start_timestamp": start_time,
         "end_timestamp": end_time
     }
@@ -65,6 +71,8 @@ def load_deribit_3m_data(instrument_name="BTC-27JUN25", resolution="1", count=10
         raise ValueError(f"❌ Deribit API error: {data.get('error', 'No result key in response')}")
 
     result = data["result"]
+    print(f"Received {len(result['ticks'])} ticks of data")
+
     df = pd.DataFrame({
         "timestamp": pd.to_datetime(result["ticks"], unit="ms"),
         "open": result["open"],
@@ -76,35 +84,31 @@ def load_deribit_3m_data(instrument_name="BTC-27JUN25", resolution="1", count=10
     df.set_index("timestamp", inplace=True)
     return df
 
-
 def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df[~df.index.duplicated()]
     df = df.sort_index()
     return df
-
 
 def save_raw_data(df: pd.DataFrame, filename: str):
     os.makedirs(RAW_DATA_PATH, exist_ok=True)
     df.to_csv(os.path.join(RAW_DATA_PATH, filename))
     print(f"Saved raw data to {RAW_DATA_PATH}{filename}")
 
-
 def save_processed_data(df: pd.DataFrame, filename: str):
     os.makedirs(PROCESSED_DATA_PATH, exist_ok=True)
     df.to_csv(os.path.join(PROCESSED_DATA_PATH, filename))
     print(f"Saved processed data to {PROCESSED_DATA_PATH}{filename}")
 
-
 if __name__ == "__main__":
     # --- Load BTC/USDT perpetual from Binance ---
-    df_perp = load_binance_data("BTC/USDT", timeframe="1m", limit=1000)
+    df_perp = load_binance_data("BTC/USDT", timeframe="5m", limit=1000)  # Fetch 1000 data points
     save_raw_data(df_perp, "btc_usdt_raw.csv")
 
     df_perp_clean = preprocess_data(df_perp)
     save_processed_data(df_perp_clean, "btc_usdt_processed.csv")
 
     # --- Load BTC-3M futures from Deribit ---
-    df_3m = load_deribit_3m_data(instrument_name="BTC-27JUN25", resolution="1", count=1000)
+    df_3m = load_deribit_3m_data(instrument_name="BTC-27JUN25", resolution="5", count=1000)  # Fetch 1000 data points
     save_raw_data(df_3m, "btc_3m_raw.csv")
 
     df_3m_clean = preprocess_data(df_3m)
